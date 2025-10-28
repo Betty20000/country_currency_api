@@ -9,6 +9,7 @@ from .models import Country
 from .serializers import CountrySerializer
 from . import utils
 from requests.exceptions import RequestException, Timeout
+import time
 
 
 @api_view(['POST'])
@@ -16,15 +17,17 @@ def refresh_countries(request):
     """
     POST /countries/refresh
     Fetch countries and exchange rates, then update or create cached data.
-    Generates summary image after successful refresh.
+    Uses bulk batching for DB speed and minimizes duplicate validation.
     """
-    # Step 1: External API fetch with error handling
+    start_time = time.time()
+
+    # Step 1: Fetch APIs safely
     try:
         countries_data = utils.fetch_countries()
     except RequestException:
         return Response(
             {"error": "External data source unavailable", "details": "Could not fetch data from Countries API"},
-            status=status.HTTP_503_SERVICE_UNAVAILABLE
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
 
     try:
@@ -32,124 +35,126 @@ def refresh_countries(request):
     except RequestException:
         return Response(
             {"error": "External data source unavailable", "details": "Could not fetch data from Exchange rates API"},
-            status=status.HTTP_503_SERVICE_UNAVAILABLE
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
 
     now = utils.get_now()
-    valid_count = 0
     validation_errors = []
+    new_countries, update_countries = [], []
 
+    # ✅ Step 2: Prefetch all existing countries once (avoid repeated queries)
+    existing_countries = {c.name.lower(): c for c in Country.objects.all()}
+
+    # ✅ Step 3: Build records for batch operations
+    for item in countries_data:
+        name = item.get("name")
+        if not name:
+            continue
+
+        capital = item.get("capital")
+        region = item.get("region")
+        population = item.get("population") or 0
+        flag = item.get("flag")
+        currencies = item.get("currencies") or []
+
+        currency_code = None
+        exchange_rate = None
+        estimated_gdp = None
+
+        if currencies:
+            first_currency = currencies[0] or {}
+            currency_code = first_currency.get("code")
+            if currency_code and currency_code in rates:
+                try:
+                    exchange_rate = float(rates.get(currency_code))
+                    if exchange_rate > 0:
+                        multiplier = utils.make_multiplier()
+                        estimated_gdp = (population * multiplier) / exchange_rate
+                except (TypeError, ValueError):
+                    exchange_rate = None
+                    estimated_gdp = None
+
+        existing = existing_countries.get(name.lower())
+
+        # ✅ Only validate new countries to avoid duplicate error
+        if not existing:
+            serializer = CountrySerializer(data={
+                "name": name,
+                "population": population,
+                "currency_code": currency_code,
+            }, context={"context_type": "refresh"})
+
+            if not serializer.is_valid():
+                validation_errors.append({
+                    "name": name,
+                    "details": serializer.errors.get("details", serializer.errors)
+                })
+                continue
+
+        if existing:
+            existing.capital = capital
+            existing.region = region
+            existing.population = population
+            existing.flag_url = flag
+            existing.currency_code = currency_code
+            existing.exchange_rate = exchange_rate
+            existing.estimated_gdp = estimated_gdp
+            existing.last_refreshed_at = now
+            update_countries.append(existing)
+        else:
+            new_countries.append(Country(
+                name=name,
+                capital=capital,
+                region=region,
+                population=population,
+                flag_url=flag,
+                currency_code=currency_code,
+                exchange_rate=exchange_rate,
+                estimated_gdp=estimated_gdp,
+                last_refreshed_at=now,
+            ))
+
+    # ✅ Step 4: Apply bulk ops safely in batches
     try:
         with transaction.atomic():
-            for item in countries_data:
-                # Extract raw data
-                name = item.get('name')
-                capital = item.get('capital')
-                region = item.get('region')
-                population = item.get('population') or 0
-                flag = item.get('flag')
-                currencies = item.get('currencies') or []
-
-                # --- Currency Handling Logic ---
-                currency_code = None
-                exchange_rate = None
-                estimated_gdp = None
-
-                if currencies:
-                    first_currency = currencies[0] or {}
-                    currency_code = first_currency.get('code')
-
-                    if currency_code and currency_code in rates:
-                        try:
-                            exchange_rate = float(rates.get(currency_code))
-                            if exchange_rate > 0:
-                                multiplier = utils.make_multiplier()
-                                estimated_gdp = (population * multiplier) / exchange_rate
-                        except (TypeError, ValueError):
-                            # if invalid data in API
-                            exchange_rate = None
-                            estimated_gdp = None
-                    else:
-                        # currency not found in exchange rate API
-                        exchange_rate = None
-                        estimated_gdp = None
-                else:
-                    # empty currencies array
-                    currency_code = None
-                    exchange_rate = None
-                    estimated_gdp = 0  # still store the record as per spec
-
-                                # --- Validation & Upsert Logic ---
-                obj = Country.objects.filter(name__iexact=name).first()
-                payload = {
-                    "name": name,
-                    "population": population,
-                    "currency_code": currency_code,
-                }
-
-                                # Use serializer differently for create vs update
-                if obj:
-                    serializer = CountrySerializer(obj, data=payload, partial=True, context={"context_type": "refresh"})
-                else:
-                    serializer = CountrySerializer(data=payload, context={"context_type": "refresh"})
-
-                if not serializer.is_valid():
-                    validation_errors.append({
-                        "name": name or "Unknown",
-                        "details": serializer.errors.get("details", serializer.errors)
-                    })
-                    continue  # skip invalid record
-
-                # --- Save or update record ---
-                defaults = {
-                    "name": name,
-                    "capital": capital,
-                    "region": region,
-                    "population": population,
-                    "flag_url": flag,
-                    "currency_code": currency_code,
-                    "exchange_rate": exchange_rate,
-                    "estimated_gdp": estimated_gdp,
-                    "last_refreshed_at": now,
-                }               
-                obj = Country.objects.filter(name__iexact=name).first()
-                if obj:
-                    for field, value in defaults.items():
-                        setattr(obj, field, value)
-                    obj.save()
-                else:
-                    Country.objects.create(**defaults)
-
-                valid_count += 1
-
-            # --- Validation summary ---
-            if valid_count == 0:
-                transaction.set_rollback(True)
-                return Response(
-                    {"error": "Validation failed", "details": validation_errors or {"general": "No valid countries found"}},
-                    status=status.HTTP_400_BAD_REQUEST
+            if new_countries:
+                Country.objects.bulk_create(new_countries, batch_size=100, ignore_conflicts=True)
+            if update_countries:
+                Country.objects.bulk_update(
+                    update_countries,
+                    fields=[
+                        "capital", "region", "population", "flag_url",
+                        "currency_code", "exchange_rate", "estimated_gdp",
+                        "last_refreshed_at"
+                    ],
+                    batch_size=100
                 )
 
-            # --- Generate summary image ---
-            total = Country.objects.count()
-            top5 = list(Country.objects.filter(estimated_gdp__isnull=False).order_by('-estimated_gdp')[:5])
-            utils.generate_summary_image(total, top5, now.isoformat())
+        valid_count = len(new_countries) + len(update_countries)
+
+        # ✅ Step 5: Generate image AFTER DB commit
+        total = Country.objects.count()
+        top5 = list(Country.objects.filter(estimated_gdp__isnull=False).order_by("-estimated_gdp")[:5])
+        utils.generate_summary_image(total, top5, now.isoformat())
 
     except Exception as e:
         return Response(
             {"error": "Internal server error", "details": str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+
+    duration = round(time.time() - start_time, 2)
 
     return Response(
         {
             "message": "Refresh successful",
             "last_refreshed_at": now.isoformat(),
-            "valid_countries": valid_count
+            "valid_countries": valid_count,
+            "duration_seconds": duration,
+            "errors": validation_errors[:5],  # show only first few
         },
-        status=status.HTTP_200_OK
+        status=status.HTTP_200_OK,
     )
-
 @api_view(['GET'])
 def list_countries(request):
     """
@@ -158,9 +163,11 @@ def list_countries(request):
       - name, capital, region, population, currency_code, exchange_rate, estimated_gdp
     Sorting:
       - ?sort=<field>_asc or <field>_desc
-      - or ?sort=gdp_desc
+      - ?sort=gdp_desc
+    Default:
+      - Ordered by id ascending.
+      - After sorting, IDs are reassigned (1, 2, 3, …) in the response only.
     """
-
     try:
         allowed_filters = {
             "name": "name__iexact",
@@ -183,19 +190,13 @@ def list_countries(request):
                 continue
             if key not in allowed_filters:
                 return Response(
-                    {
-                        "error": "Validation failed",
-                        "details": {key: "is not a valid filter"}
-                    },
+                    {"error": "Validation failed", "details": {key: "is not a valid filter"}},
                     status=status.HTTP_400_BAD_REQUEST
                 )
             value = request.GET.get(key)
             if value is None or value == "":
                 return Response(
-                    {
-                        "error": "Validation failed",
-                        "details": {key: "is required"}
-                    },
+                    {"error": "Validation failed", "details": {key: "is required"}},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
@@ -209,51 +210,54 @@ def list_countries(request):
         sort_param = request.GET.get("sort")
         if sort_param:
             if sort_param == "gdp_desc":
-                qs = qs.order_by("-estimated_gdp")
+                qs = qs.order_by("-estimated_gdp", "id")
             elif sort_param.endswith("_desc"):
                 field = sort_param.replace("_desc", "")
                 if field in allowed_sort_fields:
-                    qs = qs.order_by(f"-{field}")
+                    qs = qs.order_by(f"-{field}", "id")
                 else:
                     return Response(
-                        {
-                            "error": "Validation failed",
-                            "details": {field: "is not a valid sort field"}
-                        },
+                        {"error": "Validation failed", "details": {field: "is not a valid sort field"}},
                         status=status.HTTP_400_BAD_REQUEST
                     )
             elif sort_param.endswith("_asc"):
                 field = sort_param.replace("_asc", "")
                 if field in allowed_sort_fields:
-                    qs = qs.order_by(field)
+                    qs = qs.order_by(field, "id")
                 else:
                     return Response(
-                        {
-                            "error": "Validation failed",
-                            "details": {field: "is not a valid sort field"}
-                        },
+                        {"error": "Validation failed", "details": {field: "is not a valid sort field"}},
                         status=status.HTTP_400_BAD_REQUEST
                     )
             else:
                 return Response(
-                    {
-                        "error": "Validation failed",
-                        "details": {"sort": "invalid format (use <field>_asc or <field>_desc)"}
-                    },
-                    status=status.HTTP_400_BAD_REQUEST
+                    {"error": "Validation failed",
+                     "details": {"sort": "invalid format (use <field>_asc or <field>_desc)"}},
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
+        else:
+            qs = qs.order_by("id")
 
         # --- 404 if no matches ---
         if not qs.exists():
             return Response({"error": "Country not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        # --- Success ---
+        # --- Serialize ---
         serializer = CountrySerializer(qs, many=True)
-        return Response(serializer.data)
+        data = serializer.data
+
+        # ✅ Reassign IDs sequentially for display only
+        for i, item in enumerate(data, start=1):
+            item["id"] = i
+
+        return Response(data)
 
     except Exception as e:
         print(f"❌ Internal server error: {e}")
-        return Response({"error": "Internal server error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response(
+            {"error": "Internal server error", "details": str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 @api_view(['GET', 'DELETE'])
 def country_detail(request, name):
     """

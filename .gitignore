@@ -1,0 +1,83 @@
+# ============================
+# Python
+# ============================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ============================
+# Django
+# ============================
+*.log
+*.pot
+*.pyc
+*.mo
+db.sqlite3
+media/
+staticfiles/
+static/
+.env
+.env.local
+.env.prod
+.env.dev
+.env.*
+
+# Django cache and compiled files
+*.pid
+*.manifest
+*.lock
+*.bak
+*.tmp
+*.swp
+*.swo
+
+# ============================
+# Virtual Environment
+# ============================
+venv/
+env/
+.venv/
+ENV/
+Pipfile.lock
+poetry.lock
+
+# ============================
+# IDE / Editors
+# ============================
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+.DS_Store
+Thumbs.db
+
+# ============================
+# Deployment / OS
+# ============================
+*.tar.gz
+*.zip
+*.log
+*.bak
+*.orig
+*.rej
+
+# ============================
+# Gunicorn / Whitenoise
+# ============================
+gunicorn.conf.py
+whitenoise.log
+
+# ============================
+# MySQL
+# ============================
+*.sql
+*.sql.gz
+mysql_backup/
+dump.sql
