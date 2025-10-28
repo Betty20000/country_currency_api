@@ -1,5 +1,4 @@
 
-
 # 🌍 Country Currency & Exchange API
 
 A Django REST API that provides country data, currency exchange rates, and estimated GDPs.
@@ -34,6 +33,7 @@ Built for learning and practical backend experience.
 ** build command: pip install -r requirements.txt && python manage.py collectstatic --noinput
 
 ** start command:web: python manage.py migrate  && gunicorn country_currency.wsgi --bind 0.0.0.0:$PORT
+
 ### 1️⃣ Clone the Repository
 ```bash
 git clone https://github.com/your-username/country-currency-api.git
