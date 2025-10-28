@@ -29,41 +29,50 @@ def make_multiplier():
     return random.randint(1000, 2000)
 
 def get_summary_image_path():
-    return os.path.abspath('cache/summary.png')
+    os.makedirs("cache", exist_ok=True)
+    return os.path.join("cache", "summary.png")
 
-def generate_summary_image(total_countries, top5, timestamp, out_path='cache/summary.png'):
-    # Create a simple PNG with Pillow summarising results
-    width, height = 1200, 800
-    im = Image.new('RGB', (width, height), color=(255, 255, 255))
-    draw = ImageDraw.Draw(im)
 
+def generate_summary_image(total_countries, top5, timestamp):
+    """
+    Create a summary PNG showing total countries, top 5 GDP countries, and refresh timestamp.
+    """
+    path = get_summary_image_path()
+
+    # Create blank white image
+    img = Image.new("RGB", (800, 500), color="white")
+    draw = ImageDraw.Draw(img)
+
+    # Fonts
     try:
-        font = ImageFont.truetype('DejaVuSans.ttf', 24)
-    except Exception:
-        font = ImageFont.load_default()
+        font_title = ImageFont.truetype("arial.ttf", 28)
+        font_body = ImageFont.truetype("arial.ttf", 20)
+    except:
+        font_title = ImageFont.load_default()
+        font_body = ImageFont.load_default()
 
-    y = 20
-    draw.text((20, y), f'Total countries: {total_countries}', font=font)
-    y += 40
-    draw.text((20, y), f'Last refreshed: {timestamp}', font=font)
-    y += 60
-    draw.text((20, y), 'Top 5 countries by estimated GDP:', font=font)
-    y += 36
+    # Draw header
+    draw.text((20, 20), "🌍 Country Summary Report", fill="black", font=font_title)
+    draw.text((20, 70), f"Total Countries: {total_countries}", fill="black", font=font_body)
 
-    for i, c in enumerate(top5, start=1):
-        line = f"{i}. {c.name} — {c.estimated_gdp:,.2f} {c.currency_code or ''}"
-        draw.text((30, y), line, font=font)
-        y += 30
-        if y > height - 40:
-            break
+    # Draw top 5 GDP list
+    draw.text((20, 120), "Top 5 Countries by Estimated GDP:", fill="black", font=font_body)
 
-    # ensure cache dir exists and save
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    im.save(out_path)
-    return out_path
+    y = 160
+    if not top5:
+        draw.text((40, y), "No GDP data available.", fill="gray", font=font_body)
+    else:
+        for c in top5:
+            draw.text((40, y), f"- {c.name}: {round(c.estimated_gdp or 0, 2):,}", fill="blue", font=font_body)
+            y += 30
 
+    # Timestamp
+    draw.text((20, 400), f"Last Refresh: {timestamp}", fill="black", font=font_body)
 
-
+    # Save
+    img.save(path, "PNG")
+    return path
+   
 
 def get_now():
     """Return current UTC datetime (aware)."""

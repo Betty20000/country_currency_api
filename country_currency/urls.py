@@ -16,8 +16,17 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path,include
-
+from django.http import JsonResponse
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('countries.urls'))
 ]
+
+def custom_404(request, exception):
+    return JsonResponse({"error": "Endpoint not found,try /countries or /status"}, status=404)
+
+def custom_500(request):
+    return JsonResponse({"error": "Internal server error,try to add /countries or /status"}, status=500)
+
+handler404 = "country_currency.urls.custom_404"
+handler500 = "country_currency.urls.custom_500"
