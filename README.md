@@ -36,7 +36,7 @@ Built for learning and practical backend experience.
 
 ### 1️⃣ Clone the Repository
 ```bash
-git clone https://github.com/your-username/country-currency-api.git
+git clone https://github.com/Betty20000/country-currency-api.git
 cd country-currency-api
 ```
 
