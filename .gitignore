@@ -81,3 +81,4 @@ whitenoise.log
 *.sql.gz
 mysql_backup/
 dump.sql
+ all.py
