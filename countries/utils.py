@@ -29,9 +29,9 @@ def make_multiplier():
     return random.randint(1000, 2000)
 
 def get_summary_image_path():
-    os.makedirs("cache", exist_ok=True)
-    return os.path.join("cache", "summary.png")
-
+    path = os.path.join("/tmp", "cache")
+    os.makedirs(path, exist_ok=True)
+    return os.path.join(path, "summary.png")
 
 def generate_summary_image(total_countries, top5, timestamp):
     """
