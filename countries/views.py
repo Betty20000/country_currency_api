@@ -293,22 +293,11 @@ def get_status(request):
 def get_summary_image(request):
     """
     GET /countries/image
-    Serve the summary image stored under /tmp/cache/summary.png.
+    Serve the summary image stored in the configured cache path.
     If not found or inaccessible, return descriptive JSON error.
     """
-    import os
-    from django.http import FileResponse
-    from rest_framework.response import Response
-    from rest_framework import status
-    from . import utils
-
     try:
-        path = utils.get_summary_image_path()
-        temp_path = os.path.join('/tmp', 'cache', 'summary.png')
-
-        # Prefer the temporary cache path if available
-        if os.path.exists(temp_path):
-            path = temp_path
+        path = utils.get_summary_image_path()  # uses config.cache_path automatically
 
         if not os.path.exists(path):
             return Response({
@@ -335,8 +324,6 @@ def get_summary_image(request):
             "error": "Unexpected error",
             "details": str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
 
 
 

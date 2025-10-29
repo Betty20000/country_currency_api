@@ -9,6 +9,21 @@ import os
 
 COUNTRIES_API = 'https://restcountries.com/v2/all?fields=name,capital,region,population,flag,currencies'
 EXCHANGE_API = 'https://open.er-api.com/v6/latest/USD'
+class Config:
+    ENVIRONMENT = "production"  # "development" locally
+    CACHE_DIR = "cache"
+
+    @property
+    def cache_path(self) -> str:
+        """Return absolute cache directory path (writable)."""
+        if self.ENVIRONMENT == "production":
+            path = "/tmp/cache"
+        else:
+            path = os.path.abspath(self.CACHE_DIR)
+        os.makedirs(path, exist_ok=True)
+        return path
+
+config = Config()
 
 
 def fetch_countries():
@@ -29,17 +44,15 @@ def make_multiplier():
     return random.randint(1000, 2000)
 
 def get_summary_image_path():
-    path = os.path.join("/tmp", "cache")
-    os.makedirs(path, exist_ok=True)
-    return os.path.join(path, "summary.png")
-
+    """Return full path to the summary image in the writable cache."""
+    return os.path.join(config.cache_path, "summary.png")
 def generate_summary_image(total_countries, top5, timestamp):
     """
-    Create a summary PNG showing total countries, top 5 GDP countries, and refresh timestamp.
+    Generate a summary PNG showing total countries, top 5 GDP countries,
+    and last refresh timestamp. Saves image to cache path.
     """
     path = get_summary_image_path()
 
-    # Create blank white image
     img = Image.new("RGB", (800, 500), color="white")
     draw = ImageDraw.Draw(img)
 
@@ -51,11 +64,9 @@ def generate_summary_image(total_countries, top5, timestamp):
         font_title = ImageFont.load_default()
         font_body = ImageFont.load_default()
 
-    # Draw header
+    # Header
     draw.text((20, 20), "🌍 Country Summary Report", fill="black", font=font_title)
     draw.text((20, 70), f"Total Countries: {total_countries}", fill="black", font=font_body)
-
-    # Draw top 5 GDP list
     draw.text((20, 120), "Top 5 Countries by Estimated GDP:", fill="black", font=font_body)
 
     y = 160
@@ -69,10 +80,10 @@ def generate_summary_image(total_countries, top5, timestamp):
     # Timestamp
     draw.text((20, 400), f"Last Refresh: {timestamp}", fill="black", font=font_body)
 
-    # Save
+    # Save to cache path
     img.save(path, "PNG")
     return path
-   
+
 
 def get_now():
     """Return current UTC datetime (aware)."""
