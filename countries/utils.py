@@ -15,6 +15,7 @@ class Config:
 
     @property
     def cache_path(self) -> str:
+        
         """Return absolute cache directory path (writable)."""
         if self.ENVIRONMENT == "production":
             path = "/tmp/cache"
@@ -46,7 +47,11 @@ def make_multiplier():
 def get_summary_image_path():
     """Return full path to the summary image in the writable cache."""
     return os.path.join(config.cache_path, "summary.png")
+
+
+
 def generate_summary_image(total_countries, top5, timestamp):
+
     """
     Generate a summary PNG showing total countries, top 5 GDP countries,
     and last refresh timestamp. Saves image to cache path.
