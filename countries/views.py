@@ -293,10 +293,51 @@ def get_status(request):
 def get_summary_image(request):
     """
     GET /countries/image
-    Serve the summary image at cache/summary.png (or utils.get_summary_image_path()).
-    If not found, return specified JSON error.
+    Serve the summary image stored under /tmp/cache/summary.png.
+    If not found or inaccessible, return descriptive JSON error.
     """
-    path = utils.get_summary_image_path()
-    if not os.path.exists(path):
-        return Response({"error": "Summary image not found"}, status=status.HTTP_404_NOT_FOUND)
-    return FileResponse(open(path, 'rb'), content_type='image/png')
+    import os
+    from django.http import FileResponse
+    from rest_framework.response import Response
+    from rest_framework import status
+    from . import utils
+
+    try:
+        path = utils.get_summary_image_path()
+        temp_path = os.path.join('/tmp', 'cache', 'summary.png')
+
+        # Prefer the temporary cache path if available
+        if os.path.exists(temp_path):
+            path = temp_path
+
+        if not os.path.exists(path):
+            return Response({
+                "error": "Summary image not found",
+                "details": f"Expected file not found at {path}"
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        return FileResponse(open(path, 'rb'), content_type='image/png')
+
+    except PermissionError as e:
+        return Response({
+            "error": "Permission denied",
+            "details": str(e)
+        }, status=status.HTTP_403_FORBIDDEN)
+
+    except OSError as e:
+        return Response({
+            "error": "Internal server error",
+            "details": str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    except Exception as e:
+        return Response({
+            "error": "Unexpected error",
+            "details": str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+
+
+
