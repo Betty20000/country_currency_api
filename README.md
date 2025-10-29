@@ -67,7 +67,7 @@ python manage.py runserver
 
 ---
 
-## 🧠 Example Endpoints
+## 🧠 Endpoints
 
 | Method | Endpoint | Description |
 |--------|-----------|--------------|
@@ -75,6 +75,9 @@ python manage.py runserver
 | GET | `/countries?region=Africa` | Filter by region (auto-sorts by GDP) |
 | GET | `/countries?sort=gdp_desc` | Sort by GDP descending |
 | GET | `/countries?capital=Nairobi` | Filter by capital |
+| GET | `/countries/image` | Generate image summary |
+| GET | `/status` | number of countries and last refresh time |
+| DELETE | `/countries/kenya` | Delete country kenya |
 | POST | `/countries/refresh` | Refresh data from RESTCountries |
 
 ---
